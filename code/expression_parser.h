@@ -37,6 +37,10 @@
 #include<setjmp.h>
 #include<stdlib.h>
 
+#include <pgmspace.h>
+#include <WString.h>
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -4,6 +4,8 @@
 #include<string.h>
 #include<stdlib.h>
 
+#include <WString.h>
+
 /**
  @file expression_parser.c
  @author James Gregson (james.gregson@gmail.com)
@@ -11,6 +13,8 @@
 */
 
 #include"expression_parser.h"
+
+#define PARSER_ERROR_FLASH(data, str) parser_error(data, PSTR(str))
 
 double parse_expression( const char *expr ){
 	return parse_expression_with_callbacks( expr, NULL, NULL, NULL );
@@ -22,8 +26,8 @@ double parse_expression_with_callbacks( const char *expr, parser_variable_callba
 	parser_data_init( &pd, expr, variable_cb, function_cb, user_data );
 	val = parser_parse( &pd );
 	if( pd.error ){
-		printf("Error: %s\n", pd.error );
-		printf("Expression '%s' failed to parse, returning nan\n", expr );
+		//printf("Error: %s\n", pd.error );
+		//printf("Expression '%s' failed to parse, returning nan\n", expr );
 	}
 	return val;	
 }
@@ -67,7 +71,7 @@ double parser_parse( parser_data *pd ){
 #endif
         parser_eat_whitespace( pd );
         if( pd->pos < pd->len-1 ){
-            parser_error( pd, "Failed to reach end of input expression, likely malformed input" );
+            PARSER_ERROR_FLASH( pd, "Failed to reach end of input expression, likely malformed input" );
         } else return result;
 	} else {
 		// error was returned, output a nan silently
@@ -84,21 +88,21 @@ void parser_error( parser_data *pd, const char *err ){
 char parser_peek( parser_data *pd ){
 	if( pd->pos < pd->len )
 		return pd->str[pd->pos];
-	parser_error( pd, "Tried to read past end of string!" );
+	PARSER_ERROR_FLASH( pd, "Tried to read past end of string!" );
 	return '\0';
 }
 
 char parser_peek_n( parser_data *pd, int n ){
 	if( pd->pos+n < pd->len )
 		return pd->str[pd->pos+n];
-	parser_error( pd, "Tried to read past end of string!" );
+	PARSER_ERROR_FLASH( pd, "Tried to read past end of string!" );
 	return '\0';
 }
 
 char parser_eat( parser_data *pd ){
 	if( pd->pos < pd->len )
 		return pd->str[pd->pos++];
-	parser_error( pd, "Tried to read past end of string!" );
+	PARSER_ERROR_FLASH( pd, "Tried to read past end of string!" );
 	return '\0';
 }
 
@@ -155,7 +159,7 @@ double parser_read_double( parser_data *pd ){
 
     // check that a double-precision was read, otherwise throw an error
     if( pos == 0 || sscanf( token, "%lf", &val ) != 1 )
-        parser_error( pd, "Failed to read real number" );
+        PARSER_ERROR_FLASH( pd, "Failed to read real number" );
     
     // return the parsed value
 	return val;
@@ -197,7 +201,7 @@ int parser_read_argument_list( parser_data *pd, int *num_args, double *args ){
 		
 		// check that we haven't read too many arguments
 		if( *num_args >= PARSER_MAX_ARGUMENT_COUNT )
-			parser_error( pd, "Exceeded maximum argument count for function call, increase PARSER_MAX_ARGUMENT_COUNT and recompile!" );
+			PARSER_ERROR_FLASH( pd, "Exceeded maximum argument count for function call, increase PARSER_MAX_ARGUMENT_COUNT and recompile!" );
 		
 		// read the argument and add it to the list of arguments
 		args[*num_args] = parser_read_expr( pd );
@@ -220,7 +224,7 @@ int parser_read_argument_list( parser_data *pd, int *num_args, double *args ){
 			parser_eat_whitespace( pd );
 		} else {
 			// invalid character, print an error and return
-			parser_error( pd, "Expected ')' or ',' in function argument list!" );
+			PARSER_ERROR_FLASH( pd, "Expected ')' or ',' in function argument list!" );
 			return PARSER_FALSE;
 		}
 	}
@@ -251,7 +255,7 @@ double parser_read_builtin( parser_data *pd ){
 	if( isalpha(c) || c == '_' ){
 		// alphabetic character or underscore, indicates that either a function 
 		// call or variable follows
-		while( isalpha(c) || isdigit(c) || c == '_' ){
+		while( isalpha(c) || isdigit(c) || c == '_' || c == ':' ){
 			token[pos++] = parser_eat( pd );
 			c = parser_peek( pd );
 		}
@@ -263,62 +267,62 @@ double parser_read_builtin( parser_data *pd ){
 			parser_eat(pd);
 			
 			// start handling the specific built-in functions
-			if( strcmp( token, "pow" ) == 0 ){
+			if( strcmp_P( token, PSTR("pow") ) == 0 ){
 				v0 = parser_read_argument( pd );
 				v1 = parser_read_argument( pd );
 				v0 = pow( v0, v1 );
-			} else if( strcmp( token, "sqrt" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("sqrt")) == 0 ){
 				v0 = parser_read_argument( pd );
 				if( v0 < 0.0 ) 
-					parser_error( pd, "sqrt(x) undefined for x < 0!" );
+					PARSER_ERROR_FLASH( pd, "sqrt(x) undefined for x < 0!" );
 				v0 = sqrt( v0 );
-			} else if( strcmp( token, "log" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("log")) == 0 ){
 				v0 = parser_read_argument( pd );
 				if( v0 <= 0 )
-					parser_error( pd, "log(x) undefined for x <= 0!" );
+					PARSER_ERROR_FLASH( pd, "log(x) undefined for x <= 0!" );
 				v0 = log( v0 );
-			} else if( strcmp( token, "exp" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("exp")) == 0 ){
 				v0 = parser_read_argument( pd );
 				v0 = exp( v0 );
-			} else if( strcmp( token, "sin" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("sin")) == 0 ){
 				v0 = parser_read_argument( pd );	
 				v0 = sin( v0 );
-			} else if( strcmp( token, "asin" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("asin")) == 0 ){
 				v0 = parser_read_argument( pd );
 				if( fabs(v0) > 1.0 )
-					parser_error( pd, "asin(x) undefined for |x| > 1!" );
+					PARSER_ERROR_FLASH( pd, "asin(x) undefined for |x| > 1!" );
 				v0 = asin( v0 );
-			} else if( strcmp( token, "cos" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("cos")) == 0 ){
 				v0 = parser_read_argument( pd );
 				v0 = cos( v0 );
-			} else if( strcmp( token, "acos" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("acos")) == 0 ){
 				v0 = parser_read_argument( pd );
 				if( fabs(v0 ) > 1.0 )
-					parser_error( pd, "acos(x) undefined for |x| > 1!" );
+					PARSER_ERROR_FLASH( pd, "acos(x) undefined for |x| > 1!" );
 				v0 = acos( v0 );
-			} else if( strcmp( token, "tan" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("tan")) == 0 ){
 				v0 = parser_read_argument( pd );	
 				v0 = tan( v0 );
-			} else if( strcmp( token, "atan" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("atan")) == 0 ){
 				v0 = parser_read_argument( pd );
 				v0 = atan( v0 );
-			} else if( strcmp( token, "atan2" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("atan2")) == 0 ){
 				v0 = parser_read_argument( pd );
 				v1 = parser_read_argument( pd );
 				v0 = atan2( v0, v1 );
-			} else if( strcmp( token, "abs" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("abs")) == 0 ){
 				v0 = parser_read_argument( pd );
 				v0 = abs( (int)v0 );
-			} else if( strcmp( token, "fabs" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("fabs")) == 0 ){
 				v0 = parser_read_argument( pd );
 				v0 = fabs( v0 );
-			} else if( strcmp( token, "floor" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("floor")) == 0 ){
 				v0 = parser_read_argument( pd );
 				v0 = floor( v0 );
-			} else if( strcmp( token, "ceil" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("ceil")) == 0 ){
 				v0 = parser_read_argument( pd );
 				v0 = floor( v0 );
-			} else if( strcmp( token, "round" ) == 0 ){
+			} else if( strcmp_P( token, PSTR("round")) == 0 ){
 				v0 = parser_read_argument( pd );
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)
 				// This is a C99 compiler - use the built-in round function.
@@ -332,19 +336,19 @@ double parser_read_builtin( parser_data *pd ){
 				if( pd->function_cb && pd->function_cb( pd->user_data, token, num_args, args, &v1 ) ){
 					v0 = v1;
 				} else {
-					parser_error( pd, "Tried to call unknown built-in function!" );
+					PARSER_ERROR_FLASH( pd, "Tried to call unknown built-in function!" );
 				}
 			}
 		
 			// eat closing bracket of function call
 			if( parser_eat( pd ) != ')' )
-				parser_error( pd, "Expected ')' in built-in call!" );
+				PARSER_ERROR_FLASH( pd, "Expected ')' in built-in call!" );
 		} else {
 			// no opening bracket, indicates a variable lookup
 			if( pd->variable_cb != NULL && pd->variable_cb( pd->user_data, token, &v1 ) ){
 				v0 = v1;
 			} else {
-				parser_error( pd, "Could not look up value for variable!" );
+				PARSER_ERROR_FLASH( pd, "Could not look up value for variable!" );
 			}
 		}
 	} else {
@@ -380,7 +384,7 @@ double parser_read_paren( parser_data *pd ){
 		
 		// match the closing brace
 		if( parser_peek(pd) != ')' )
-			parser_error( pd, "Expected ')'!" );		
+			PARSER_ERROR_FLASH( pd, "Expected ')'!" );		
 		parser_eat(pd);
 	} else {
 		// otherwise just read a literal value
@@ -405,7 +409,7 @@ double parser_read_unary( parser_data *pd ){
 		v0 = parser_read_paren(pd);
 		v0 = fabs(v0) >= PARSER_BOOLEAN_EQUALITY_THRESHOLD ? 0.0 : 1.0;
 #else
-		parser_error( pd, "Expected '+' or '-' for unary expression, got '!'" );
+		PARSER_ERROR_FLASH( pd, "Expected '+' or '-' for unary expression, got '!'" );
 #endif
 	} else if( c == '-' ){
 		// perform unary negation
@@ -588,7 +592,7 @@ double parser_read_boolean_comparison( parser_data *pd ){
 		} else if( strcmp( oper, ">=" ) == 0 ){
 			v0 = (v0 >= v1) ? 1.0 : 0.0;
 		} else {
-			parser_error( pd, "Unknown operation!" );
+			PARSER_ERROR_FLASH( pd, "Unknown operation!" );
 		}
 		
 		// read trailing whitespace
@@ -626,7 +630,7 @@ double parser_read_boolean_equality( parser_data *pd ){
 			oper[0] = parser_eat( pd );
 			c = parser_peek( pd );
 			if( c != '=' )
-				parser_error( pd, "Expected a '=' for boolean '==' operator!" );
+				PARSER_ERROR_FLASH( pd, "Expected a '=' for boolean '==' operator!" );
 			oper[1] = parser_eat( pd );
 		}
 		// eat trailing whitespace
@@ -641,7 +645,7 @@ double parser_read_boolean_equality( parser_data *pd ){
 		} else if( strcmp( oper, "!=" ) == 0 ){
 			v0 = ( fabs(v0 - v1) > PARSER_BOOLEAN_EQUALITY_THRESHOLD ) ? 1.0 : 0.0;
 		} else {
-			parser_error( pd, "Unknown operation!" );
+			PARSER_ERROR_FLASH( pd, "Unknown operation!" );
 		}
 		
 		// read trailing whitespace
@@ -673,7 +677,7 @@ double parser_read_boolean_and( parser_data *pd ){
 		// check for and eat the second '&'
 		c = parser_peek( pd );
 		if( c != '&' )
-			parser_error( pd, "Expected '&' to follow '&' in logical and operation!" );
+			PARSER_ERROR_FLASH( pd, "Expected '&' to follow '&' in logical and operation!" );
 		parser_eat( pd );
 		
 		// eat any remaining whitespace
@@ -716,7 +720,7 @@ double parser_read_boolean_or( parser_data *pd ){
 		// check for and match the second '|' character
 		c = parser_peek( pd );
 		if( c != '|' )
-			parser_error( pd, "Expected '|' to follow '|' in logical or operation!" );
+			PARSER_ERROR_FLASH( pd, "Expected '|' to follow '|' in logical or operation!" );
 		parser_eat( pd );
 		
 		// eat any following whitespace
